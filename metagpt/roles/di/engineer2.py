@@ -63,13 +63,25 @@ class Engineer2(RoleZero):
         Display the current terminal and editor state.
         This information will be dynamically added to the command prompt.
         """
-        current_directory = (await self.terminal.run_command("pwd")).strip()
-        self.editor._set_workdir(current_directory)
-        state = {
-            "editor_open_file": self.editor.current_file,
-            "current_directory": current_directory,
-        }
-        self.cmd_prompt_current_state = CURRENT_STATE.format(**state).strip()
+        try:
+            # Use a Windows-compatible command if on Windows
+            import platform
+            if platform.system() == "Windows":
+                current_directory = (await self.terminal.run_command("cd")).strip()
+            else:
+                current_directory = (await self.terminal.run_command("pwd")).strip()
+                
+            self.editor._set_workdir(current_directory)
+            state = {
+                "editor_open_file": self.editor.current_file,
+                "current_directory": current_directory,
+            }
+            self.cmd_prompt_current_state = CURRENT_STATE.format(**state).strip()
+        except Exception as e:
+            import logging
+            logging.error(f"Error in _format_instruction: {str(e)}")
+            # Set default values if there's an error
+            self.cmd_prompt_current_state = ""
 
     def _update_tool_execution(self):
         # validate = ValidateAndRewriteCode()

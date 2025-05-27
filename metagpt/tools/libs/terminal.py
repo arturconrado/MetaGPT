@@ -1,8 +1,10 @@
-import asyncio
 import os
 import re
+import time
+import asyncio
 from asyncio import Queue
 from asyncio.subprocess import PIPE, STDOUT
+from pathlib import Path
 from typing import Optional
 
 from metagpt.config2 import Config
@@ -22,7 +24,10 @@ class Terminal:
     """
 
     def __init__(self):
-        self.shell_command = ["bash"]  # FIXME: should consider windows support later
+        config = Config.default()
+        # Use the executable from config if available, otherwise default to bash
+        executable = getattr(config.terminal, "executable", "bash")
+        self.shell_command = [executable]
         self.command_terminator = "\n"
         self.stdout_queue = Queue(maxsize=1000)
         self.observer = TerminalReporter()
@@ -36,15 +41,35 @@ class Terminal:
 
     async def _start_process(self):
         # Start a persistent shell process
-        self.process = await asyncio.create_subprocess_exec(
-            *self.shell_command,
-            stdin=PIPE,
-            stdout=PIPE,
-            stderr=STDOUT,
-            executable="bash",
-            env=os.environ.copy(),
-            cwd=DEFAULT_WORKSPACE_ROOT.absolute(),
-        )
+        config = Config.default()
+        # Use the executable from config if available, otherwise default to bash
+        executable = getattr(config.terminal, "executable", "bash")
+        
+        # Check if the executable is a batch file (.bat)
+        is_batch_file = executable.lower().endswith('.bat')
+        
+        if is_batch_file:
+            # For batch files, we need to use shell=True and cmd /c to execute them properly in Windows
+            cmd = f'cmd /c "{executable}"'
+            self.process = await asyncio.create_subprocess_shell(
+                cmd,
+                stdin=PIPE,
+                stdout=PIPE,
+                stderr=STDOUT,
+                env=os.environ.copy(),
+                cwd=DEFAULT_WORKSPACE_ROOT.absolute(),
+                shell=True
+            )
+        else:
+            # For non-batch files, use the standard approach
+            self.process = await asyncio.create_subprocess_exec(
+                executable,  # Use executable directly instead of *self.shell_command
+                stdin=PIPE,
+                stdout=PIPE,
+                stderr=STDOUT,
+                env=os.environ.copy(),
+                cwd=DEFAULT_WORKSPACE_ROOT.absolute(),
+            )
         await self._check_state()
 
     async def _check_state(self):
@@ -141,26 +166,52 @@ class Terminal:
             # We read bytes directly from stdout instead of text because when reading text,
             # '\r' is changed to '\n', resulting in excessive output.
             tmp = b""
+            # Add a timeout to prevent hanging indefinitely
+            start_time = time.time()
+            timeout = 60  # 60 seconds timeout
+            
             while True:
-                output = tmp + await self.process.stdout.read(1)
-                if not output:
-                    continue
-                *lines, tmp = output.splitlines(True)
-                for line in lines:
-                    line = line.decode()
-                    ix = line.rfind(END_MARKER_VALUE)
-                    if ix >= 0:
-                        line = line[0:ix]
-                        if line:
-                            await observer.async_report(line, "output")
-                            # report stdout in real-time
-                            cmd_output.append(line)
-                        return "".join(cmd_output)
-                    # log stdout in real-time
-                    await observer.async_report(line, "output")
-                    cmd_output.append(line)
-                    if daemon:
-                        await self.stdout_queue.put(line)
+                # Check for timeout
+                if time.time() - start_time > timeout:
+                    logger.warning(f"Command execution timed out after {timeout} seconds: {cmd}")
+                    return "\n".join(cmd_output) + "\n[Command timed out]"  # Return collected output so far
+                
+                try:
+                    # Use asyncio.wait_for to add timeout to the read operation
+                    read_task = self.process.stdout.read(1)
+                    chunk = await asyncio.wait_for(read_task, timeout=5.0)  # 5 second timeout for each read
+                    output = tmp + chunk
+                    
+                    if not output:
+                        # If no output and we've been waiting too long, consider it done
+                        if time.time() - start_time > 10:  # 10 seconds with no output
+                            logger.info(f"No output for 10 seconds, assuming command completed: {cmd}")
+                            return "\n".join(cmd_output)
+                        await asyncio.sleep(0.1)  # Short sleep to prevent CPU spinning
+                        continue
+                        
+                    *lines, tmp = output.splitlines(True)
+                    for line in lines:
+                        line = line.decode()
+                        ix = line.rfind(END_MARKER_VALUE)
+                        if ix >= 0:
+                            line = line[0:ix]
+                            if line:
+                                await observer.async_report(line, "output")
+                                # report stdout in real-time
+                                cmd_output.append(line)
+                            return "".join(cmd_output)
+                        # log stdout in real-time
+                        await observer.async_report(line, "output")
+                        cmd_output.append(line)
+                        if daemon:
+                            await self.stdout_queue.put(line)
+                except asyncio.TimeoutError:
+                    logger.warning(f"Read operation timed out for command: {cmd}")
+                    continue  # Continue trying to read
+                except Exception as e:
+                    logger.error(f"Error reading command output: {str(e)}")
+                    return "\n".join(cmd_output) + f"\n[Error: {str(e)}]"
 
     async def close(self):
         """Close the persistent shell process."""
