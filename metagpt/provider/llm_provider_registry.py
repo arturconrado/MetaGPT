@@ -46,3 +46,10 @@ def create_llm_instance(config: LLMConfig) -> BaseLLM:
 
 # Registry instance
 LLM_REGISTRY = LLMProviderRegistry()
+
+# Importar e registrar o FallbackLLM
+from metagpt.provider.fallback_llm import FallbackLLM
+
+# Registrar o FallbackLLM para o tipo OPENROUTER
+# Isso substituirá o OpenAILLM como o provedor padrão para OPENROUTER
+LLM_REGISTRY.register(LLMType.OPENROUTER, FallbackLLM)
