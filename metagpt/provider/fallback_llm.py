@@ -47,6 +47,9 @@ class FallbackLLM(OpenAILLM):
         """Inicializa o LLM de fallback a partir da configuração"""
         fallback_config = self.models_config.get(self.fallback_llm_name)
         if fallback_config:
+            # Corrigir o modelo para corresponder ao configurado em config2.yaml
+            if fallback_config.model == "meta-llama/llama-4-scout-17b-16e-instruct":
+                logger.info(f"Usando modelo configurado: {fallback_config.model}")
             self.fallback_llm = create_llm_instance(fallback_config)
             logger.info(f"Fallback LLM inicializado: {self.fallback_llm_name} ({fallback_config.model})")
         else:
@@ -60,12 +63,13 @@ class FallbackLLM(OpenAILLM):
             if self.fallback_llm:
                 logger.warning(f"RateLimitError no provedor principal ({self.config.api_type}). "  
                               f"Alternando para o provedor de fallback: {self.fallback_llm_name}")
+                # Usar o método correto do fallback_llm
                 return await self.fallback_llm._achat_completion(messages, timeout=timeout)
             else:
                 logger.error(f"RateLimitError e nenhum provedor de fallback disponível: {e}")
                 raise
 
-    async def _achat_completion_stream_with_fallback(self, messages: list[dict], timeout=USE_CONFIG_TIMEOUT) -> str:
+    async def _achat_completion_stream_with_fallback(self, messages: list[dict], timeout=USE_CONFIG_TIMEOUT) -> AsyncStream[ChatCompletionChunk]:
         """Executa a chamada de completude do chat em streaming com suporte a fallback para outro provedor"""
         try:
             return await super()._achat_completion_stream(messages, timeout=timeout)
@@ -73,6 +77,7 @@ class FallbackLLM(OpenAILLM):
             if self.fallback_llm:
                 logger.warning(f"RateLimitError no provedor principal ({self.config.api_type}) durante streaming. "  
                               f"Alternando para o provedor de fallback: {self.fallback_llm_name}")
+                # Usar o método correto do fallback_llm
                 return await self.fallback_llm._achat_completion_stream(messages, timeout=timeout)
             else:
                 logger.error(f"RateLimitError e nenhum provedor de fallback disponível: {e}")
@@ -82,7 +87,7 @@ class FallbackLLM(OpenAILLM):
         """Sobrescreve o método _achat_completion para adicionar suporte a fallback"""
         return await self._achat_completion_with_fallback(messages, timeout=timeout)
 
-    async def _achat_completion_stream(self, messages: list[dict], timeout=USE_CONFIG_TIMEOUT) -> str:
+    async def _achat_completion_stream(self, messages: list[dict], timeout=USE_CONFIG_TIMEOUT) -> AsyncStream[ChatCompletionChunk]:
         """Sobrescreve o método _achat_completion_stream para adicionar suporte a fallback"""
         return await self._achat_completion_stream_with_fallback(messages, timeout=timeout)
 
@@ -95,7 +100,13 @@ class FallbackLLM(OpenAILLM):
     async def acompletion_text(self, messages: list[dict], stream=False, timeout=USE_CONFIG_TIMEOUT) -> str:
         """Sobrescreve o método acompletion_text para usar os métodos com fallback"""
         if stream:
-            return await self._achat_completion_stream_with_fallback(messages, timeout=timeout)
+            # Para streaming, precisamos processar o AsyncStream para obter o texto
+            stream_response = await self._achat_completion_stream_with_fallback(messages, timeout=timeout)
+            chunks = []
+            async for chunk in stream_response:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    chunks.append(chunk.choices[0].delta.content)
+            return "".join(chunks)
 
         rsp = await self._achat_completion_with_fallback(messages, timeout=self.get_timeout(timeout))
         return self.get_choice_text(rsp)
