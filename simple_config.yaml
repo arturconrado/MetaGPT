@@ -1,0 +1,106 @@
+# Configuração Simples - Sistema de Upgrade Ionic/Angular
+# Versão técnica focada apenas no core funcional
+
+# Configurações do projeto
+project:
+  name: "simple-ionic-angular-upgrade"
+  description: "POC simples para upgrade Ionic/Angular"
+  version: "1.0.0-simple"
+
+# Versões de upgrade
+versions:
+  angular:
+    target: "17.0.0"
+    min_supported: "12.0.0"
+  ionic:
+    target: "7.0.0"
+    min_supported: "5.0.0"
+  node:
+    min_required: "16.0.0"
+  npm:
+    min_required: "8.0.0"
+
+# Configurações de upgrade
+upgrade:
+  # Estratégia: incremental ou direct
+  strategy: "direct"
+  
+  # Criar backup antes do upgrade
+  backup_enabled: true
+  
+  # Executar build após upgrade
+  verify_build: true
+  
+  # Timeout para comandos (segundos)
+  command_timeout: 300
+  
+  # Forçar atualizações mesmo com conflitos
+  force_updates: true
+
+# Pacotes Angular a serem atualizados
+angular_packages:
+  - "@angular/core"
+  - "@angular/common"
+  - "@angular/forms"
+  - "@angular/router"
+  - "@angular/platform-browser"
+  - "@angular/platform-browser-dynamic"
+  - "@angular/animations"
+  - "@angular/cli"
+  - "@angular/compiler-cli"
+
+# Pacotes Ionic a serem atualizados
+ionic_packages:
+  - "@ionic/angular"
+  - "@ionic/cli"
+  - "@ionic/storage-angular"
+
+# Dependências adicionais comuns
+additional_packages:
+  - "rxjs"
+  - "typescript"
+  - "zone.js"
+
+# Configurações de logging
+logging:
+  level: "INFO"
+  console_output: true
+  file_output: false
+
+# Configurações de relatório
+report:
+  format: "markdown"
+  include_errors: true
+  include_changes: true
+  include_timing: true
+
+# Configurações de backup
+backup:
+  # Diretórios a excluir do backup
+  exclude_dirs:
+    - "node_modules"
+    - ".git"
+    - "dist"
+    - ".angular"
+    - "coverage"
+  
+  # Manter backups por X dias
+  retention_days: 7
+
+# Comandos personalizados (opcional)
+custom_commands:
+  pre_upgrade: []
+  post_upgrade: []
+  
+# Verificações pré-upgrade
+pre_checks:
+  - "package.json exists"
+  - "node version >= 16"
+  - "npm version >= 8"
+  - "git status clean"
+
+# Verificações pós-upgrade
+post_checks:
+  - "npm install successful"
+  - "build successful"
+  - "no critical errors"
