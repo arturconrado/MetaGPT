@@ -1,12 +1,7 @@
 name: Unit Tests
 
 on:
-  pull_request_target:
-  push: 
-    branches:
-      - 'main'
-      - 'dev'
-      - '*-release'
+  workflow_dispatch:
 
 permissions:
   contents: read
