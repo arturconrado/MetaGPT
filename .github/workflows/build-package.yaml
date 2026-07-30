@@ -2,8 +2,6 @@ name: Build and upload python package
 
 on:
   workflow_dispatch:
-  release:
-    types: [created, published]
 
 jobs:
   deploy:
